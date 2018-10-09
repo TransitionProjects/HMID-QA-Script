@@ -53,10 +53,11 @@ class HMIDDQ:
         pt_with_entry_error = smallest_delta[
             smallest_delta["Days Between Entry and HMID"] > 0
         ][["Client Uid", "Provider"]].rename(
-            {"Client Uid": "Count of Participants with HMID Error at Exit"},
+            {"Client Uid": "Count of Participants with HMID Error at Entry"},
             axis=1
         ).groupby(
-            by="Provider"
+            by="Provider",
+            as_index=False
         ).count()
 
         # return the groupby object with the Client Uid renamed to make it
@@ -103,7 +104,8 @@ class HMIDDQ:
             {"Client Uid": "Count of Participants with HMID Error at Exit"},
             axis=1
         ).groupby(
-            by="Provider"
+            by="Provider",
+            as_index=False
         ).count()
 
         # return the groupby object with the Client Uid renamed to make it
@@ -117,7 +119,24 @@ class HMIDDQ:
         pass
 
     def process(self):
-        pass
+        # merge the self.entry_error_pivot object and the self.exit_error_pivot
+        # object
+        merged_pivots = self.entry_error_pivot.merge(
+            self.exit_error_pivot,
+            how="outer"
+        )
+
+        # initialize the writer object
+        writer = pd.ExcelWriter(
+            asksaveasfilename(title="Save the QA HMID Report"),
+            engine="xlsxwriter"
+        )
+
+        # write the pivot tables to excel
+        merged_pivots.to_excel(writer, sheet_name="Summary", index=False)
+        # merged_data.to_excel(wrtier, sheet_name="Processed Data", index=False)
+        self.data.to_excel(writer, sheet_name="Raw Data", index=False)
+        writer.save()
 
 if __name__ == "__main__":
     run = HMIDDQ(askopenfilename(title="Open the QA Shelter Exit HMID Mismatch Report"))
