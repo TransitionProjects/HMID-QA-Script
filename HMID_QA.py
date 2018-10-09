@@ -52,13 +52,16 @@ class HMIDDQ:
         # errors at entry
         pt_with_entry_error = smallest_delta[
             smallest_delta["Days Between Entry and HMID"] > 0
-        ][["Client Uid", "Provider"]].groupby(
+        ][["Client Uid", "Provider"]].rename(
+            {"Client Uid": "Count of Participants with HMID Error at Exit"},
+            axis=1
+        ).groupby(
             by="Provider"
         ).count()
 
         # return the groupby object with the Client Uid renamed to make it
         # more meaningfull
-        return pt_with_entry_error.rename({"Client Uid": "Count of Participants with HMID Error at Entry"})
+        return pt_with_entry_error
 
 
     def pivot_errors_at_exit(self):
@@ -96,13 +99,16 @@ class HMIDDQ:
         pt_with_exit_error = smallest_delta[
             (smallest_delta["Days Between Exit and HMID"] < 32) &
             (smallest_delta["Days Between Exit and HMID"] > -15)
-        ][["Client Uid", "Provider"]].groupby(
+        ][["Client Uid", "Provider"]].rename(
+            {"Client Uid": "Count of Participants with HMID Error at Exit"},
+            axis=1
+        ).groupby(
             by="Provider"
         ).count()
 
         # return the groupby object with the Client Uid renamed to make it
         # more meaningfull
-        return pt_with_exity_error.rename({"Client Uid": "Count of Participants with HMID Error at Exit"})
+        return pt_with_exit_error
 
     def id_errors_at_placement(self):
         pass
