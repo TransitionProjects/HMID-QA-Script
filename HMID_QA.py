@@ -63,21 +63,28 @@ class HMIDDQ:
 
     def pivot_errors_at_exit(self):
         # create a local copy of the data frame with rows that have a nan in the
-        # hmid column droped
-        w_hmid = self.data.dropna(subset=["Housing Move-in Date(9160)"])
+        # hmid or entry exit exit date column droped
+        w_hmid = self.data.dropna(
+            subset=["Housing Move-in Date(9160)", "Entry Exit Exit Date"]
+        )
         w_hmid["Provider"] = [
             self.shelter_short[provider] for provider in w_hmid["Entry Exit Provider Id"]
         ]
 
-        # create days between entry and HMID column
-        w_hmid["Days Between Entry and HMID"] = (
-            w_hmid["Entry Exit Entry Date"] - w_hmid["Housing Move-in Date(9160)"]
+        # create days between exit and HMID column
+        w_hmid["Days Between Exit and HMID"] = (
+            w_hmid["Entry Exit Exit Date"] - w_hmid["Housing Move-in Date(9160)"]
         ).dt.days
 
-        # sort by the days between entry and HMID then drop rows retaining then
-        # rows with the lower values and duplicate Client Uid
+        # create a column showing the absolute value of the Days Between Exit
+        # and HMID columns
+        w_hmid["Days Between Exit and HMID ABS"] = w_hmid["Days Between Exit and HMID"].abs()
+
+        # sort by the days between exit and HMID abs then drop rows, retaining
+        # those rows with the lower absolute values when they have duplicate
+        # Client Uid values
         smallest_delta = w_hmid.sort_values(
-            by=["Client Uid", "Days Between Entry and HMID"],
+            by=["Client Uid", "Days Between Exit and HMID ABS"],
             ascending=True
         ).drop_duplicates(
             subset=["Client Uid"],
@@ -86,15 +93,16 @@ class HMIDDQ:
 
         # create a groupby object showing counts of participants with hmid
         # errors at entry
-        pt_with_entry_error = smallest_delta[
-            smallest_delta["Days Between Entry and HMID"] > 0
+        pt_with_exit_error = smallest_delta[
+            (smallest_delta["Days Between Exit and HMID"] < 32) &
+            (smallest_delta["Days Between Exit and HMID"] > -15)
         ][["Client Uid", "Provider"]].groupby(
             by="Provider"
         ).count()
 
         # return the groupby object with the Client Uid renamed to make it
         # more meaningfull
-        return pt_with_entry_error.rename({"Client Uid": "Count of Participants with HMID Error at Entry"})
+        return pt_with_exity_error.rename({"Client Uid": "Count of Participants with HMID Error at Exit"})
 
     def id_errors_at_placement(self):
         pass
