@@ -1,5 +1,7 @@
 # import required libraries
 import pandas as pd
+
+from numpy import select
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 # initialize a class
@@ -7,6 +9,9 @@ class HMIDDQ:
     def __init__(self, file):
         # convert the file parameter to a data frame
         self.data = pd.read_excel(file)
+        self.data["Entry Date"] = self.data["Entry Exit Entry Date"].dt.date
+        self.data["Exit Date"] = self.data["Entry Exit Exit Date"].dt.date
+        self.data["HMID"] = self.data["Housing Move-in Date(9160)"].dt.date
 
         # a dictionary of full provider names, specifically shelters, and short
         # names that should be used for them
@@ -20,218 +25,103 @@ class HMIDDQ:
             "Transition Projects (TPI) - SOS Shelter(2712)": "SOS Shelter",
             "Transition Projects (TPI) - Columbia Shelter(6527)": "Columbia Shelter"
         }
-        self.entry_error_pivot = self.pivot_errors_at_entry()
-        self.exit_error_pivot = self.pivot_errors_at_exit()
-        self.entry_error_data = self.errors_at_entry()
-        self.exit_error_data = self.errors_at_exit()
 
-    def pivot_errors_at_entry(self):
-        # create a local copy of the data frame with rows that have a nan in the
-        # hmid column droped
-        w_hmid = self.data.dropna(subset=["Housing Move-in Date(9160)"])
-        w_hmid["Provider"] = [
-            self.shelter_short[provider] for provider in w_hmid["Entry Exit Provider Id"]
+        self.perm_dest = [
+            "Owned by client, no ongoing housing subsidy (HUD)",
+            "Owned by client, with ongoing housing subsidy (HUD)",
+            "Permanent housing for formerly homeless persons (HUD)",
+            "Rental by client, no ongoing housing subsidy (HUD)",
+            "Rental by client, with other ongoing housing subsidy (HUD)",
+            "Rental by client, with VASH subsidy (HUD)",
+            "Staying or living with family, permanent tenure (HUD)",
+            "Staying or living with friends, permanent tenure (HUD)",
+            "Foster care home or foster care group home (HUD)",
+            "Rental by client, with GPD TIP subsidy (HUD)",
+            "Permanent housing (other than RRH) for formerly homeless persons (HUD)",
+            "Moved from one HOPWA funded project to HOPWA PH (HUD)",
+            "Long-term care facility or nursing home (HUD)",
+            "Residential project or halfway house with no homeless criteria (HUD)"
+        ]
+        self.temp_dest = [
+            "Hospital or other residential non-psychiatric medical facility (HUD)",
+            "Hotel or motel paid for without emergency shelter voucher (HUD)",
+            "Jail, prison or juvenile detention facility (HUD)",
+            "Staying or living with family, temporary tenure (e.g., room, apartment or house)(HUD)",
+            "Staying or living with friends, temporary tenure (e.g., room apartment or house)(HUD)",
+            "Transitional housing for homeless persons (including homeless youth) (HUD)",
+            "Moved from one HOPWA funded project to HOPWA TH (HUD)",
+            "Substance abuse treatment facility or detox center (HUD)",
+            "Psychiatric hospital or other psychiatric facility (HUD)"
+        ]
+        self.other_dest = [
+            "Deceased (HUD)",
+            "Emergency shelter, including hotel or motel paid for with emergency shelter voucher (HUD)",
+            "Place not meant for habitation (HUD)",
+            "Other (HUD)",
+            "No exit interview completed (HUD)",
+            "Client doesn't know (HUD)",
+            "Client refused (HUD)"
         ]
 
-        # create days between entry and HMID column
-        w_hmid["Days Between Entry and HMID"] = (
-            w_hmid["Entry Exit Entry Date"] - w_hmid["Housing Move-in Date(9160)"]
-        ).dt.days
-
-        # sort by the days between entry and HMID then drop rows retaining then
-        # rows with the lower values and duplicate Client Uid
-        smallest_delta = w_hmid.sort_values(
-            by=["Client Uid", "Days Between Entry and HMID"],
-            ascending=True
-        ).drop_duplicates(
-            subset=["Client Uid"],
-            keep="first"
+    def make_errors_df(self):
+        # Make a local copy of the dataframe
+        df = self.data.drop(
+            columns=[
+                "Entry Exit Exit Date",
+                "Entry Exit Entry Date",
+                "Housing Move-in Date(9160)"
+            ]
         )
 
-        # create a groupby object showing counts of participants with hmid
-        # errors at entry
-        pt_with_entry_error = smallest_delta[
-            smallest_delta["Days Between Entry and HMID"] > 0
-        ][["Client Uid", "Provider"]].rename(
-            {"Client Uid": "Count of Participants with HMID Error at Entry"},
-            axis=1
-        ).groupby(
-            by="Provider",
-            as_index=False
-        ).count()
-
-        # return the groupby object with the Client Uid renamed to make it
-        # more meaningfull
-        return pt_with_entry_error
-
-
-    def errors_at_entry(self):
-        # create a local copy of the data frame with rows that have a nan in the
-        # hmid column droped
-        w_hmid = self.data.dropna(subset=["Housing Move-in Date(9160)"])
-        w_hmid["Provider"] = [
-            self.shelter_short[provider] for provider in w_hmid["Entry Exit Provider Id"]
+        # Use the select method to create a column showing which HMIDs are
+        # erroneous.
+        conditions = [
+            (df["HMID"] < df["Entry Date"]),
+            (df["HMID"] == df["Entry Date"]),
+            (
+                (df["HMID"] > df["Entry Date"]) &
+                ((df["HMID"] < df["Exit Date"]) | (df["HMID"] == df["Exit Date"]))
+            ),
+            (
+                df["Entry Exit Destination"].isin(self.perm_dest) &
+                df["HMID"].isna()
+            ),
+            (df["Entry Exit Destination"] == "Data not collected (HUD)"),
+            (
+                (
+                    df["Entry Exit Destination"].isin(self.temp_dest) |
+                    df["Entry Exit Destination"].isin(self.other_dest)
+                ) &
+                (df["HMID"] > df["Exit Date"])
+            )
         ]
-
-        # create days between entry and HMID column
-        w_hmid["Days Between Entry and HMID"] = (
-            w_hmid["Entry Exit Entry Date"] - w_hmid["Housing Move-in Date(9160)"]
-        ).dt.days
-
-        # sort by the days between entry and HMID then drop rows retaining then
-        # rows with the lower values and duplicate Client Uid
-        smallest_delta = w_hmid.sort_values(
-            by=["Client Uid", "Days Between Entry and HMID"],
-            ascending=True
-        ).drop_duplicates(
-            subset=["Client Uid"],
-            keep="first"
-        )
-
-        # create a groupby object showing counts of participants with hmid
-        # errors at entry
-        pt_with_entry_error = smallest_delta[
-            smallest_delta["Days Between Entry and HMID"] > 0
+        choices = [
+            "HMID Prior to Entry Date",
+            "HMID Matching Shelter Entry Date",
+            "HMID During Shelter Stay",
+            "Missing HMID",
+            "Invalid Exit Destination Selected",
+            "HMID Set When Leaving to Non-Perm Destination"
         ]
+        df["HMID Error Type"] = select(conditions, choices, "")
 
-        # create a column to help end users identify participants with this error
-        pt_with_entry_error["HMID Error at Entry"] = "Yes"
-
-        # return the groupby object with the Client Uid renamed to make it
-        # more meaningfull
-        return pt_with_entry_error[[
-            "Client Uid",
-            "Provider",
-            "Entry Exit Entry Date",
-            "HMID Error at Entry"
-        ]]
-
-
-    def pivot_errors_at_exit(self):
-        # create a local copy of the data frame with rows that have a nan in the
-        # hmid or entry exit exit date column droped
-        w_hmid = self.data.dropna(
-            subset=["Housing Move-in Date(9160)", "Entry Exit Exit Date"]
-        )
-        w_hmid["Provider"] = [
-            self.shelter_short[provider] for provider in w_hmid["Entry Exit Provider Id"]
+        # Use the select method to create a column showing appropriate
+        # corrective actions
+        choices_c = [
+            "Delete the HMID in the entry assessment",
+            "Delete the HMID in the entry assessment",
+            "Change the HMID to the day after their shelter exit date",
+            "Confirm that pt exited to perm, and either change exit destination or enter HMID in exit as exit date plus one day",
+            "Change Exit Destination to a valid option",
+            "Confirm Exit Destination and HMID.  Changing either, both, or none of these fields may be valid depending on the situation"
         ]
-
-        # create days between exit and HMID column
-        w_hmid["Days Between Exit and HMID"] = (
-            w_hmid["Entry Exit Exit Date"] - w_hmid["Housing Move-in Date(9160)"]
-        ).dt.days
-
-        # create a column showing the absolute value of the Days Between Exit
-        # and HMID columns
-        w_hmid["Days Between Exit and HMID ABS"] = w_hmid["Days Between Exit and HMID"].abs()
-
-        # sort by the days between exit and HMID abs then drop rows, retaining
-        # those rows with the lower absolute values when they have duplicate
-        # Client Uid values
-        smallest_delta = w_hmid.sort_values(
-            by=["Client Uid", "Days Between Exit and HMID ABS"],
-            ascending=True
-        ).drop_duplicates(
-            subset=["Client Uid"],
-            keep="first"
-        )
-
-        # create a groupby object showing counts of participants with hmid
-        # errors at entry
-        pt_with_exit_error = smallest_delta[
-            (smallest_delta["Days Between Exit and HMID"] < 32) &
-            (smallest_delta["Days Between Exit and HMID"] > -15)
-        ][["Client Uid", "Provider"]].rename(
-            {"Client Uid": "Count of Participants with HMID Error at Exit"},
-            axis=1
-        ).groupby(
-            by="Provider",
-            as_index=False
-        ).count()
-
-        # return the groupby object with the Client Uid renamed to make it
-        # more meaningfull
-        return pt_with_exit_error
+        df["Suggested Correction"] = select(conditions, choices_c, "")
 
 
-    def errors_at_exit(self):
-        # create a local copy of the data frame with rows that have a nan in the
-        # hmid or entry exit exit date column droped
-        w_hmid = self.data.dropna(
-            subset=["Housing Move-in Date(9160)", "Entry Exit Exit Date"]
-        )
-        w_hmid["Provider"] = [
-            self.shelter_short[provider] for provider in w_hmid["Entry Exit Provider Id"]
-        ]
-
-        # create days between exit and HMID column
-        w_hmid["Days Between Exit and HMID"] = (
-            w_hmid["Entry Exit Exit Date"] - w_hmid["Housing Move-in Date(9160)"]
-        ).dt.days
-
-        # create a column showing the absolute value of the Days Between Exit
-        # and HMID columns
-        w_hmid["Days Between Exit and HMID ABS"] = w_hmid["Days Between Exit and HMID"].abs()
-
-        # sort by the days between exit and HMID abs then drop rows, retaining
-        # those rows with the lower absolute values when they have duplicate
-        # Client Uid values
-        smallest_delta = w_hmid.sort_values(
-            by=["Client Uid", "Days Between Exit and HMID ABS"],
-            ascending=True
-        ).drop_duplicates(
-            subset=["Client Uid"],
-            keep="first"
-        )
-
-        # create a groupby object showing counts of participants with hmid
-        # errors at entry
-        pt_with_exit_error = smallest_delta[
-            (smallest_delta["Days Between Exit and HMID"] < 32) &
-            (smallest_delta["Days Between Exit and HMID"] > -15)
-        ]
-
-        # create a column to help end users identify participants with this error
-        pt_with_exit_error["HMID Error at Exit"] = "Yes"
-
-        # return the groupby object with the Client Uid renamed to make it
-        # more meaningful
-        return pt_with_exit_error[[
-            "Client Uid",
-            "Provider",
-            "Entry Exit Entry Date",
-            "HMID Error at Exit"
-        ]]
-
-
-    def id_errors_at_placement(self):
-        pass
-
-    def id_errors_at_follow_up(self):
-        pass
+        return df
 
     def process(self):
-        # merge the self.entry_error_pivot object and the self.exit_error_pivot
-        # object
-        merged_pivots = self.entry_error_pivot.merge(
-            self.exit_error_pivot,
-            how="outer"
-        )
-
-        # merge the processed data frames which will be used by the end user
-        # to identify which participant files need correction
-        merged_data = self.data.merge(
-            self.exit_error_data,
-            on=["Client Uid", "Entry Exit Entry Date"],
-            how="left"
-        ).merge(
-            self.entry_error_data,
-            on=["Client Uid", "Entry Exit Entry Date"],
-            how="left"
-        ).drop(["Provider_x", "Provider_y"], axis=1)
-
-
+        processed = self.make_errors_df()
         # initialize the writer object
         writer = pd.ExcelWriter(
             asksaveasfilename(title="Save the QA HMID Report"),
@@ -239,8 +129,7 @@ class HMIDDQ:
         )
 
         # write the pivot tables to excel
-        merged_pivots.to_excel(writer, sheet_name="Summary", index=False)
-        merged_data.to_excel(writer, sheet_name="Processed Data", index=False)
+        processed[~(processed["HMID Error Type"] == "")].to_excel(writer, sheet_name="Processed Data", index=False)
         self.data.to_excel(writer, sheet_name="Raw Data", index=False)
         writer.save()
 
